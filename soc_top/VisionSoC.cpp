@@ -10,17 +10,18 @@ int sc_main(int argc, char** argv) {
     soc.rst_n.write(true);
 
     // Run long enough for at least one frame
-    sc_start(5, SC_MS);
+    sc_start(20, SC_MS);
 
-    // Dump JPEG
-    FILE* f = fopen("output.jpg", "wb");
-    if (f && !soc.sink.buffer.empty()) {
-        fwrite(soc.sink.buffer.data(), 1, soc.sink.buffer.size(), f);
+    // Dump JPEG from DMA buffer
+    if (!soc.dma.ddr.empty()) {
+        FILE* f = fopen("output.jpg", "wb");
+        fwrite(soc.dma.ddr.data(), 1, soc.dma.ddr.size(), f);
         fclose(f);
+
         std::cout << "JPEG written to output.jpg, size = "
-                  << soc.sink.buffer.size() << " bytes\n";
+                  << soc.dma.ddr.size() << " bytes\n";
     } else {
-        std::cout << "No data captured in sink.buffer\n";
+        std::cout << "No data captured in DMA buffer\n";
     }
 
     return 0;

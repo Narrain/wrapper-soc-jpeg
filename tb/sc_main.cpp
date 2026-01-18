@@ -6,21 +6,31 @@ int sc_main(int argc, char** argv) {
 
     // Apply reset
     soc.rst_n.write(false);
-    sc_start(50, SC_NS);   // hold reset for 50ns
+    sc_start(20, SC_NS);
     soc.rst_n.write(true);
 
-    // Run long enough for ISP → Encoder → Sink
+    // After reset in your testbench:
+    soc.dummy_valid.write(true);
+    soc.dummy_data.write(0x11223344);
+    // wait(10, SC_NS);
+    soc.dummy_valid.write(false);
+
+    // Tie dummy_ready high
+    soc.dummy_ready.write(true);
+
+    // Run long enough for ISP → Encoder → FIFO → DMA
     sc_start(5, SC_MS);
 
-    // Write JPEG output
-    FILE* f = fopen("output.jpg", "wb");
-    if (f && !soc.sink.buffer.empty()) {
-        fwrite(soc.sink.buffer.data(), 1, soc.sink.buffer.size(), f);
+    // Dump DMA output
+    if (!soc.dma.ddr.empty()) {
+        FILE* f = fopen("output.jpg", "wb");
+        fwrite(soc.dma.ddr.data(), 1, soc.dma.ddr.size(), f);
         fclose(f);
+
         std::cout << "JPEG written to output.jpg, size = "
-                  << soc.sink.buffer.size() << " bytes\n";
+                  << soc.dma.ddr.size() << " bytes\n";
     } else {
-        std::cout << "No data captured in sink.buffer\n";
+        std::cout << "No data captured in DMA buffer\n";
     }
 
     return 0;

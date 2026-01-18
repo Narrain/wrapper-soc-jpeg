@@ -4,6 +4,9 @@ project(vision_soc LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_BUILD_TYPE Debug)
+add_compile_options(-g)
+
 # SystemC
 set(SYSTEMC_HOME "/opt/systemc-2.3.4")
 find_package(SystemCLanguage REQUIRED)
@@ -44,6 +47,27 @@ target_link_libraries(isp_stub
     SystemC::systemc
 )
 
+
+# Pixel FIFO
+add_library(pixelfifo
+    soc_top/PixelFifo.cpp
+)
+
+# Bitstream FIFO
+add_library(bitstream_fifo
+    soc_top/BitstreamFifo.cpp
+)
+
+# Bitstream FIFO
+add_library(bstream_fifo
+    soc_top/WordFifo.cpp
+)
+
+# DMA Stub
+add_library(dma_stub
+    soc_top/Dmastub.cpp
+)
+
 # Bitstream sink
 add_library(bitstream_sink
     soc_top/BitstreamSink.cpp
@@ -61,6 +85,10 @@ add_library(vision_soc_lib
 target_link_libraries(vision_soc_lib
     encoder_rtl
     isp_stub
+    pixelfifo
+    bitstream_fifo
+    bstream_fifo
+    dma_stub
     bitstream_sink
     SystemC::systemc
 )

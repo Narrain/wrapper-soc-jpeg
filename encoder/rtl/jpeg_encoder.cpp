@@ -1,302 +1,199 @@
 #include "jpeg_encoder.h"
-#include <systemc.h>
-#include <cstring>   // for memcpy
+#include "pixel.h"
+#include <iostream>
+#include <cstring>
 
-using namespace sc_core;
-using namespace sc_dt;
-
-// ------------------------------------------------------------
-// Constructor
-// ------------------------------------------------------------
-#if 0
-JPEG_Encoder::JPEG_Encoder(sc_core::sc_module_name name)
-    : sc_core::sc_module(name)
+// Convert frame_pixels (pixel_t) into libjpeg RGB buffer
+static void fill_jpeg_input_buffer(const std::vector<pixel_t>& frame,
+                                   JSAMPLE* buffer,
+                                   int width,
+                                   int height)
 {
-    SC_CTHREAD(ingest_frame, clk.pos());
-    async_reset_signal_is(rst_n, false);
+    // pixel_t: sc_uint<8> r,g,b
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int idx  = y * width + x;
+            const pixel_t& p = frame[idx];
+            int base = idx * 3;
 
-    SC_CTHREAD(encode_and_stream, clk.pos());
-    async_reset_signal_is(rst_n, false);
-}
-#endif 
-JPEG_Encoder::JPEG_Encoder(sc_core::sc_module_name name)
-    : sc_core::sc_module(name)
-{
-    width = 128; 
-    height = 128;
-    SC_CTHREAD(run, clk.pos()); 
-    async_reset_signal_is(rst_n, false); 
-}
-
-// ------------------------------------------------------------
-// Frame ingestion thread
-// ------------------------------------------------------------
-#if 0
-void JPEG_Encoder::ingest_frame() {
-    in_ready.write(false);
-    frame_pixels.clear();
-    wait();
-
-    while (true) {
-        if (frame_start.read()) {
-            frame_pixels.clear();
+            buffer[base + 0] = static_cast<uint8_t>(p.r.to_uint());
+            buffer[base + 1] = static_cast<uint8_t>(p.g.to_uint());
+            buffer[base + 2] = static_cast<uint8_t>(p.b.to_uint());
         }
-
-        if (in_valid.read()) {
-            frame_pixels.push_back(in_pixel.read());
-            in_ready.write(true);
-        } else {
-            in_ready.write(false);
-        }
-
-        wait();
     }
 }
-#endif
-#if 0
+
 void JPEG_Encoder::ingest_frame() {
     frame_pixels.clear();
+    in_ready.write(true);
 
     while (true) {
-        // Capture pixels
-        if (in_valid.read()) {
-            frame_pixels.push_back(in_pixel.read());
-            in_ready.write(true);
-        } else {
-            in_ready.write(false);
-        }
-
-        // Detect frame_end rising edge
-        if (frame_end.read())
-            break;
-
         wait();
-    }
 
-    in_ready.write(false);
-    wait(); // consume the frame_end cycle
-}
-#endif 
-void JPEG_Encoder::ingest_frame() {
-    frame_pixels.clear();
-
-    while (true) {
-        // We are ready to accept a pixel every cycle
-        in_ready.write(true);
-
+        // Capture pixel if valid
         if (in_valid.read()) {
             frame_pixels.push_back(in_pixel.read());
         }
 
-        // Detect end of frame
-        if (frame_end.read())
-            break;
-
-        wait();
-    }
-
-    in_ready.write(false);
-    wait(); // consume the frame_end cycle
-}
-
-
-// ------------------------------------------------------------
-// JPEG encoding + bitstream streaming thread
-// ------------------------------------------------------------
-#if 0
-void JPEG_Encoder::encode_and_stream() {
-    bs_valid.write(false);
-    irq_done.write(false);
-    wait();
-
-    while (true) {
+        // Exit AFTER capturing the last pixel
         if (frame_end.read()) {
-
-            // ------------------------------------------------------------
-            // REAL JPEG ENCODER (libjpeg-turbo)
-            // ------------------------------------------------------------
-            struct jpeg_compress_struct cinfo;
-            struct jpeg_error_mgr jerr;
-
-            cinfo.err = jpeg_std_error(&jerr);
-            jpeg_create_compress(&cinfo);
-
-            unsigned char* outbuf = nullptr;
-            unsigned long outsize = 0;
-            jpeg_mem_dest(&cinfo, &outbuf, &outsize);
-
-
-            cinfo.image_width = width;
-            cinfo.image_height = height;
-            cinfo.input_components = 3;
-            cinfo.in_color_space = JCS_RGB;
-
-            jpeg_set_defaults(&cinfo);
-            jpeg_start_compress(&cinfo, TRUE);
-
-            JSAMPROW row[1];
-            std::vector<unsigned char> rowbuf(width * 3);
-
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    pixel_t p = frame_pixels[y * width + x];
-                    rowbuf[x * 3 + 0] = p.r.to_uint();
-                    rowbuf[x * 3 + 1] = p.g.to_uint();
-                    rowbuf[x * 3 + 2] = p.b.to_uint();
-                }
-                row[0] = &rowbuf[0];
-                jpeg_write_scanlines(&cinfo, row, 1);
-            }
-
-            jpeg_finish_compress(&cinfo);
-            jpeg_buffer.assign(outbuf, outbuf + outsize);
-            jpeg_size = outsize;
-            free(outbuf);
-            jpeg_destroy_compress(&cinfo);
-
-            // ------------------------------------------------------------
-            // STREAM OUT BITSTREAM (32-bit words)
-            // ------------------------------------------------------------
-            int idx = 0;
-            std::cout << sc_time_stamp()
-                    << " [ENC] jpeg_size = " << jpeg_size
-                    << " (w=" << width << ", h=" << height << ")\n";
-
-            while (idx < (int)jpeg_size) {
-                sc_dt::sc_uint<32> word = 0;
-
-                for (int b = 0; b < 4 && idx < (int)jpeg_size; b++, idx++) {
-                    word.range(b * 8 + 7, b * 8) = jpeg_buffer[idx];
-                }
-
-                while (!bs_ready.read())
-                    wait();
-
-                bs_data.write(word);
-                bs_valid.write(true);
-                wait();
-
-                bs_valid.write(false);
-                wait();
-            }
-
-            // ------------------------------------------------------------
-            // IRQ: encoding done
-            // ------------------------------------------------------------
-            irq_done.write(true);
-            wait();
-            irq_done.write(false);
+            break;
         }
-
-        wait();
     }
+
+    in_ready.write(false);
 }
-#endif
 
 void JPEG_Encoder::encode_and_stream() {
-    // JPEG encode
+
+    std::cout << sc_time_stamp()
+              << " [ENC] encode_and_stream entered, frame_pixels = "
+              << frame_pixels.size() << "\n";
+
+    int width  = cfg.width.to_int();
+    int height = cfg.height.to_int();
+
+    // Fallback: infer from frame size (assume square)
+    if (width == 0 || height == 0) {
+        int pixels = static_cast<int>(frame_pixels.size());
+        int side = static_cast<int>(std::sqrt(pixels));
+        if (side * side == pixels && side > 0) {
+            width  = side;
+            height = side;
+            std::cout << "[ENC] inferred width/height = "
+                      << width << "x" << height << "\n";
+        } else {
+            std::cerr << "[ENC] ERROR: cfg width/height unset and cannot infer from "
+                      << pixels << " pixels\n";
+            return; // bail out safely
+        }
+    }
+
+    if (width <= 0 || height <= 0) {
+        std::cerr << "[ENC] ERROR: non-positive width/height: "
+                  << width << "x" << height << "\n";
+        return;
+    }
+
+    int expected = width * height;
+    if ((int)frame_pixels.size() < expected) {
+        std::cerr << "[ENC] ERROR: frame_pixels < expected ("
+                  << frame_pixels.size() << " vs " << expected << ")\n";
+        return; // do NOT call libjpeg or fill buffer
+    }
+
+    jpeg_buffer.clear();
+    jpeg_size = 0;
+
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
 
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_compress(&cinfo);
 
-    unsigned char* outbuf = nullptr;
-    unsigned long outsize = 0;
-    jpeg_mem_dest(&cinfo, &outbuf, &outsize);
+    unsigned char* outbuffer = nullptr;
+    unsigned long  outsize   = 0;
+    jpeg_mem_dest(&cinfo, &outbuffer, &outsize);
 
-    cinfo.image_width = width;
-    cinfo.image_height = height;
+    cinfo.image_width      = width;
+    cinfo.image_height     = height;
     cinfo.input_components = 3;
-    cinfo.in_color_space = JCS_RGB;
+    cinfo.in_color_space   = JCS_RGB;
 
     jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, cfg.quality.to_int(), TRUE);
+
     jpeg_start_compress(&cinfo, TRUE);
 
-    JSAMPROW row[1];
-    std::vector<unsigned char> rowbuf(width * 3);
+    std::vector<JSAMPLE> rgb_buf(width * height * 3);
+    fill_jpeg_input_buffer(frame_pixels, rgb_buf.data(), width, height);
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            pixel_t p = frame_pixels[y * width + x];
-            rowbuf[x * 3 + 0] = p.r.to_uint();
-            rowbuf[x * 3 + 1] = p.g.to_uint();
-            rowbuf[x * 3 + 2] = p.b.to_uint();
-        }
-        row[0] = &rowbuf[0];
-        jpeg_write_scanlines(&cinfo, row, 1);
+    JSAMPROW row_pointer[1];
+    int row_stride = width * 3;
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        row_pointer[0] = &rgb_buf[cinfo.next_scanline * row_stride];
+        jpeg_write_scanlines(&cinfo, row_pointer, 1);
     }
 
     jpeg_finish_compress(&cinfo);
-    jpeg_buffer.assign(outbuf, outbuf + outsize);
-    jpeg_size = outsize;
-    free(outbuf);
     jpeg_destroy_compress(&cinfo);
 
-    std::cout << sc_time_stamp() << " [ENC] jpeg_size = " << jpeg_size << "\n";
+    jpeg_buffer.assign(outbuffer, outbuffer + outsize);
+    jpeg_size = outsize;
+    std::cout << "[ENC] jpeg_size = " << jpeg_size << " bytes\n";
 
-    // Stream out
-    int idx = 0;
-    while (idx < (int)jpeg_size) {
-        sc_dt::sc_uint<32> word = 0;
+    std::cout << "[ENC] first bytes of jpeg_buffer: ";
+    for (int i = 0; i < 16 && i < (int)jpeg_buffer.size(); ++i) {
+        printf("%02x ", jpeg_buffer[i]);
+    }
+    printf("\n");
 
-        for (int b = 0; b < 4 && idx < (int)jpeg_size; b++, idx++) {
-            word.range(b * 8 + 7, b * 8) = jpeg_buffer[idx];
+    free(outbuffer);
+
+
+    // ---------------- STREAM TO DMA ----------------
+    // Assumes: bs_data (sc_out<sc_uint<32>>),
+    //          bs_valid (sc_out<bool>),
+    //          bs_ready (sc_in<bool>)
+    //
+    // We are inside SC_CTHREAD (run()), so wait() is legal here.
+
+    std::cout << "[ENC] streaming " << jpeg_size << " bytes to DMA\n";
+
+    bs_valid.write(false);
+    wait();  // align to clock
+
+    std::size_t idx = 0;
+    while (idx < jpeg_buffer.size()) {
+        // Pack up to 4 bytes into one 32-bit word (little-endian)
+        sc_uint<32> w = 0;
+        for (int b = 0; b < 4; ++b) {
+            uint8_t val = 0;
+            if (idx < jpeg_buffer.size()) {
+                val = jpeg_buffer[idx++];
+            }
+            w |= (sc_uint<32>)val << (8 * b);
         }
 
-        while (!bs_ready.read())
-            wait();
-
-        bs_data.write(word);
-        bs_valid.write(true);
-        wait();
-
-        bs_valid.write(false);
-        wait();
+        // Handshake: wait until downstream is ready, then send one beat
+        bool sent = false;
+        while (!sent) {
+            wait();  // next clock
+            if (bs_ready.read()) {
+                bs_data.write(w);
+                bs_valid.write(true);
+                wait();          // one cycle with valid high
+                bs_valid.write(false);
+                sent = true;
+            }
+        }
     }
+
+    std::cout << "[ENC] streaming done\n";
+
 }
 
-#if 0
 void JPEG_Encoder::run() {
     in_ready.write(false);
     bs_valid.write(false);
     irq_done.write(false);
-    wait();
+    irq_status.write(0);
 
-    while (true) {
-        // Wait for frame_start
-        while (!frame_start.read())
-            wait();
+    // Default config for now
+    cfg.width   = 128;
+    cfg.height  = 128;
+    cfg.quality = 80;
+    cfg.irq_en  = true;
 
-        // Ingest pixels
-        ingest_frame();
-
-        // Encode + stream
-        encode_and_stream();
-
-        // IRQ
-        irq_done.write(true);
-        wait();
-        irq_done.write(false);
-
-        // Wait for frame_end
-        while (!frame_end.read())
-            wait();
-
-        wait(); // idle
-    }
-}
-#endif
-void JPEG_Encoder::run() {
-    in_ready.write(false);
-    bs_valid.write(false);
-    irq_done.write(false);
     wait();
 
     while (true) {
         std::cout << sc_time_stamp() << " [ENC] waiting for frame_start\n";
         while (!frame_start.read())
             wait();
+
+        irq_status.write(0);
 
         std::cout << sc_time_stamp() << " [ENC] frame_start seen, ingesting\n";
         ingest_frame();
@@ -307,7 +204,11 @@ void JPEG_Encoder::run() {
         encode_and_stream();
         std::cout << sc_time_stamp() << " [ENC] encode_and_stream done\n";
 
-        irq_done.write(true);
+        sc_uint<32> st = irq_status.read();
+        st |= IRQ_FRAME_DONE;
+        irq_status.write(st);
+
+        irq_done.write(cfg.irq_en && (irq_status.read() != 0));
         wait();
         irq_done.write(false);
 
@@ -315,6 +216,18 @@ void JPEG_Encoder::run() {
         while (frame_end.read())
             wait();
 
-        wait(); // idle
+        wait();
     }
+}
+
+JPEG_Encoder::JPEG_Encoder(sc_module_name n)
+: sc_module(n)
+{
+    cfg.width   = 128;
+    cfg.height  = 128;
+    cfg.quality = 75;
+    cfg.irq_en  = 1;
+
+    SC_CTHREAD(run, clk.pos());
+    async_reset_signal_is(rst_n, false);
 }
