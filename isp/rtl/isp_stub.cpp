@@ -27,6 +27,14 @@ void ISP_stub::run() {
 
                 out_pixel.write(p);
                 out_valid.write(true);
+
+                // *** DEBUG PRINT: ISP output pixel ***
+                std::cout << sc_time_stamp()
+                          << " [ISP] pixel = ("
+                          << (int)p.r << ", "
+                          << (int)p.g << ", "
+                          << (int)p.b << ")\n";
+
                 wait();
             }
         }

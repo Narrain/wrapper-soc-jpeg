@@ -7,29 +7,38 @@ void DmaStub::run() {
     in_ready.write(false);
     wait(); // reset
 
+    bool done = false;
+
     while (true) {
-        // Always ready to accept data
-        in_ready.write(true);
-        wait();
 
-        if (in_valid.read()) {
-            sc_uint<32> w = in_data.read();
-            static int dbg_count = 0;
-            if (dbg_count < 8) {
-                std::cout << sc_time_stamp()
-                        << " [DMA] w = 0x" << std::hex << w.to_uint()
-                        << std::dec << "\n";
-                dbg_count++;
-            }
+        // If encoder signals done and we haven't handled it yet,
+        // append EOI (FF D9 00 00) and stop.
 
-            ddr.push_back(static_cast<uint8_t>( w        & 0xFF));
-            ddr.push_back(static_cast<uint8_t>((w >> 8)  & 0xFF));
-            ddr.push_back(static_cast<uint8_t>((w >> 16) & 0xFF));
-            ddr.push_back(static_cast<uint8_t>((w >> 24) & 0xFF));
-
-            std::cout << sc_time_stamp() << " [DMA] word received, ddr size = "
-                    << ddr.size() << "\n";
+        if (done) {
+            in_ready.write(false);
+        } else {
+            in_ready.write(true);
         }
 
+        wait();
+        std::cout << sc_time_stamp() << " [DMA] irq_done=" << irq_done.read() << "\n";
+        if (irq_done.read() && !done) {
+            std::cout << sc_time_stamp() << " [DMA] irq_done seen\n";
+            ddr.push_back(0xFF);
+            ddr.push_back(0xD9);
+            ddr.push_back(0x00);
+            ddr.push_back(0x00);
+            done = true;
+        }
+
+        if (!done && in_valid.read()) {
+            sc_uint<32> w = in_data.read();
+
+            ddr.push_back((uint8_t)(w & 0xFF));
+            ddr.push_back((uint8_t)((w >> 8) & 0xFF));
+            ddr.push_back((uint8_t)((w >> 16) & 0xFF));
+            ddr.push_back((uint8_t)((w >> 24) & 0xFF));
+        }
     }
+
 }

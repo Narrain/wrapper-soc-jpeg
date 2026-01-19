@@ -11,9 +11,7 @@ SC_MODULE(DmaStub) {
     sc_in<sc_uint<32>> in_data;
     sc_in<bool>        in_valid;
     sc_out<bool>       in_ready;
-
-    // sc_out<bool>       irq;
-    // sc_out<bool>       irq_done;
+    sc_in<bool>       irq_done;
 
     std::vector<uint8_t> ddr;
     bool active;

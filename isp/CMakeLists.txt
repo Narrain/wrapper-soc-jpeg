@@ -25,6 +25,7 @@ add_library(isp_rtl
 )
 
 target_include_directories(isp_rtl PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
     ${CMAKE_CURRENT_SOURCE_DIR}/rtl
 )
 
