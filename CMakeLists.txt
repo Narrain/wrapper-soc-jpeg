@@ -49,12 +49,12 @@ target_link_libraries(encoder_rtl
 )
 
 # ------------------------------------------------------------
-# ISP stub
+# ISP Top
 # ------------------------------------------------------------
-add_library(isp_stub
-    isp/rtl/isp_stub.cpp
+add_library(isp_top
+    isp/rtl/ISPTop.cpp
 )
-target_link_libraries(isp_stub SystemC::systemc)
+target_link_libraries(isp_top SystemC::systemc)
 
 # ------------------------------------------------------------
 # Pixel FIFO
@@ -113,7 +113,7 @@ add_executable(vision_soc_tb
 
 target_link_libraries(vision_soc_tb
     encoder_rtl
-    isp_stub
+    isp_top
     pixelfifo
     block_maker
     bitstream_fifo

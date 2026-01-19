@@ -14,6 +14,8 @@ find_package(SystemCLanguage REQUIRED)
 # Encoder RTL library
 # ------------------------------------------------------------
 add_library(encoder_rtl
+    rtl/EncoderTop.cpp
+    rtl/EncoderTop.h
     rtl/JPEG_Encoder.cpp
     rtl/JPEG_Encoder.h
     rtl/DCTQ.cpp

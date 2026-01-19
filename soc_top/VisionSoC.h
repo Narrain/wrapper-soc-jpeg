@@ -1,6 +1,6 @@
 #pragma once
 #include <systemc.h>
-#include "isp_stub.h"
+#include "ISPTop.h"
 #include "PixelFifo.h"
 #include "BlockMaker.h"
 #include "JPEG_Encoder.h"
@@ -64,7 +64,7 @@ SC_MODULE(VisionSoC) {
     sc_signal<sc_uint<8>>  cfg_irq_mask;
 
     // Blocks
-    ISP_stub      isp;
+    ISPTop      isp;
     PixelFifo     pix_fifo;
     BlockMaker    block_maker;
     JPEG_Encoder  enc;
